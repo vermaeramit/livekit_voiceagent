@@ -41,8 +41,10 @@ class VoiceAgent(Agent):
         )
 
     async def on_enter(self):
-        """Called when the user joins — the agent opens the conversation."""
-        self.session.generate_reply()
+        """Called when the user joins — play a fixed greeting (no LLM, instant)."""
+        self.session.say(
+            "नमस्कार! मैं आपका AI वॉइस असिस्टेंट हूँ। मैं आपकी कैसे मदद कर सकता हूँ?"
+        )
 
 
 async def entrypoint(ctx: JobContext):
