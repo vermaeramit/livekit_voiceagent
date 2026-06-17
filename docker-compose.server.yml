@@ -1,24 +1,24 @@
-# Server (Linux) deployment — isolated bridge network, only chosen ports exposed.
-# Does NOT use host networking, so it won't interfere with other apps on the host.
+# Server (Linux) deployment with self-signed HTTPS for LAN use (no domain needed).
+# Isolated bridge network + only chosen ports exposed — won't touch other apps.
+#
 # Run with:  docker compose -f docker-compose.server.yml --env-file .env up -d --build
 #
-# All tunable values come from .env (see .env.server.example):
-#   SERVER_IP, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, SARVAM_API_KEY,
-#   WEB_PORT, LK_SIGNAL_PORT, LK_TCP_PORT, LK_UDP_PORT
+# Browser → https://SERVER_IP:HTTPS_PORT  (Caddy, self-signed: accept the warning once)
+# Caddy proxies the web page, /token, and the LiveKit signaling (as wss://).
+# Media (mic/agent audio) flows directly over UDP LK_UDP_PORT.
+#
+# .env values: SERVER_IP, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, SARVAM_API_KEY,
+#              HTTPS_PORT, LK_TCP_PORT, LK_UDP_PORT
 
 services:
   livekit:
     image: livekit/livekit-server:latest
-    # --node-ip makes the server advertise the host's reachable IP so remote
-    # browsers (and the agent) can connect for media.
     command: --config /etc/livekit.yaml --node-ip ${SERVER_IP}
     restart: unless-stopped
     ports:
-      - "${LK_SIGNAL_PORT:-7880}:7880"
-      - "${LK_TCP_PORT:-7881}:7881"
-      - "${LK_UDP_PORT:-7882}:7882/udp"
+      - "${LK_TCP_PORT:-7881}:7881"        # RTC/TCP fallback
+      - "${LK_UDP_PORT:-7882}:7882/udp"    # RTC/UDP media (direct, not via Caddy)
     environment:
-      # Keys via env (format "key: secret"); must match the agent + token below.
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
     volumes:
       - ./livekit.server.yaml:/etc/livekit.yaml
@@ -28,9 +28,8 @@ services:
     restart: unless-stopped
     depends_on:
       - livekit
-    # Default bridge network: reaches the server internally by service name.
     environment:
-      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_URL: ws://livekit:7880          # internal — agent talks to server directly
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
       SARVAM_API_KEY: ${SARVAM_API_KEY}
@@ -41,13 +40,32 @@ services:
     restart: unless-stopped
     depends_on:
       - livekit
-    ports:
-      - "${WEB_PORT:-3000}:3000"
+    # No published port — only Caddy reaches it (internal network).
     environment:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
-      # URL the browser uses to reach LiveKit — the server's IP + signal port.
-      LIVEKIT_PUBLIC_URL: ws://${SERVER_IP}:${LK_SIGNAL_PORT:-7880}
+      # Browser reaches LiveKit signaling over the HTTPS/Caddy endpoint (wss).
+      LIVEKIT_PUBLIC_URL: wss://${SERVER_IP}:${HTTPS_PORT:-8443}
     volumes:
       - ./token_server.py:/app/token_server.py
       - ./web:/app/web
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - token
+      - livekit
+    ports:
+      - "${HTTPS_PORT:-8443}:${HTTPS_PORT:-8443}"
+    environment:
+      SERVER_IP: ${SERVER_IP}
+      HTTPS_PORT: ${HTTPS_PORT:-8443}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data        # persists the self-signed cert across restarts
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

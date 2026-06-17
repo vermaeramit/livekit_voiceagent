@@ -1,0 +1,19 @@
+# HTTPS for a LAN server with no domain — Caddy serves a self-signed cert for the
+# server IP (its own internal CA). Browsers show a one-time "Not secure → Proceed"
+# warning; after that the page is a secure context, so the microphone works.
+{
+	auto_https disable_redirects
+}
+
+{$SERVER_IP}:{$HTTPS_PORT} {
+	bind 0.0.0.0
+	tls internal              # self-signed cert from Caddy's internal CA (no domain needed)
+
+	# LiveKit signaling — HTTP validate + WebSocket upgrade — must be wss:// since
+	# the page is https://. Proxy to the internal LiveKit server.
+	@livekit path /rtc /rtc/*
+	reverse_proxy @livekit livekit:7880
+
+	# Everything else (web client + /token) → the token server.
+	reverse_proxy token:3000
+}
