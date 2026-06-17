@@ -5,7 +5,9 @@
 	auto_https disable_redirects
 }
 
-{$SERVER_IP}:{$HTTPS_PORT} {
+# NOTE: the https:// scheme is required — without it Caddy serves plain HTTP on a
+# non-443 port, which causes ERR_SSL_PROTOCOL_ERROR in the browser.
+https://{$SERVER_IP}:{$HTTPS_PORT} {
 	bind 0.0.0.0
 	tls internal              # self-signed cert from Caddy's internal CA (no domain needed)
 
