@@ -3,6 +3,10 @@
 # warning; after that the page is a secure context, so the microphone works.
 {
 	auto_https disable_redirects
+	# Clients connecting to an IP send no SNI, so Caddy can't match a cert and the
+	# TLS handshake fails ("internal error"). This makes the IP's cert the default
+	# for SNI-less connections.
+	default_sni {$SERVER_IP}
 }
 
 # NOTE: the https:// scheme is required — without it Caddy serves plain HTTP on a
