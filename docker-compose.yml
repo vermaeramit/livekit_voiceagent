@@ -1,0 +1,44 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    # Bridge + published ports: required so the Windows-host browser can reach the
+    # server (Docker Desktop host networking is NOT reachable from the Windows host).
+    ports:
+      - "7880:7880"        # signaling
+      - "7881:7881"        # RTC/TCP
+      - "7882:7882/udp"    # RTC/UDP
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+
+  agent:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - livekit
+    # Host network so the agent shares the host's loopback and reaches the
+    # server's published ports over 127.0.0.1 — the same address the browser
+    # uses. This is what lets media (mic + agent audio) actually flow.
+    network_mode: host
+    environment:
+      LIVEKIT_URL: ws://localhost:7880   # published port on the host
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: devsecret_change_me_min_32_characters_long_0123456789
+      SARVAM_API_KEY: ${SARVAM_API_KEY}   # pulled from your .env / shell
+
+  token:
+    build: .
+    command: ["python", "token_server.py"]
+    restart: unless-stopped
+    depends_on:
+      - livekit
+    ports:
+      - "3000:3000"          # open http://localhost:3000 in your browser
+    environment:
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: devsecret_change_me_min_32_characters_long_0123456789
+      LIVEKIT_PUBLIC_URL: ws://localhost:7880   # URL the browser uses to reach LiveKit
+    volumes:
+      - ./token_server.py:/app/token_server.py   # mounted so edits need no rebuild
+      - ./web:/app/web

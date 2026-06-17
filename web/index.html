@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sarvam × LiveKit · Voice Agent</title>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07080c;
+      --panel: rgba(20, 22, 30, 0.72);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #eef1f7;
+      --muted: #8a90a2;
+      --accent: #b13bff;
+      --accent2: #ff3d9a;
+      --danger: #f0413f;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 800px at 80% -10%, rgba(177,59,255,0.18), transparent 60%),
+        radial-gradient(900px 700px at 0% 110%, rgba(255,61,154,0.14), transparent 55%),
+        var(--bg);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .app {
+      width: min(440px, 94vw);
+      height: min(720px, 94vh);
+      background: var(--panel);
+      backdrop-filter: blur(22px) saturate(120%);
+      -webkit-backdrop-filter: blur(22px) saturate(120%);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ---- header ---- */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 22px 24px 14px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand .logo {
+      width: 26px; height: 26px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: 0 0 18px rgba(177,59,255,0.6);
+    }
+    .brand h1 { font-size: .82rem; letter-spacing: .22em; margin: 0; font-weight: 700; }
+    .tabs {
+      display: flex; gap: 4px; background: rgba(255,255,255,0.05);
+      padding: 4px; border-radius: 999px; border: 1px solid var(--border);
+    }
+    .tabs button {
+      border: 0; background: transparent; color: var(--muted); cursor: pointer;
+      font: inherit; font-size: .76rem; font-weight: 600; letter-spacing: .04em;
+      padding: 7px 15px; border-radius: 999px; display: flex; align-items: center; gap: 6px;
+      transition: .2s;
+    }
+    .tabs button.active { background: rgba(255,255,255,0.1); color: #fff; }
+    .tabs button svg { width: 14px; height: 14px; }
+
+    /* ---- main view ---- */
+    main { flex: 1; position: relative; overflow: hidden; }
+    .view { position: absolute; inset: 0; display: flex; flex-direction: column;
+            opacity: 0; pointer-events: none; transition: opacity .25s; }
+    .view.active { opacity: 1; pointer-events: auto; }
+
+    /* voice view */
+    #voice { align-items: center; justify-content: space-between; padding: 8px 24px 26px; }
+    .you-line { width: 100%; }
+    .you-line .label { font-size: .7rem; letter-spacing: .16em; color: var(--muted); font-weight: 700; }
+    .you-line .text { margin-top: 6px; font-size: 1.02rem; line-height: 1.45; color: #cfd4e2; min-height: 1.4em; }
+    .you-line .text.placeholder { color: var(--muted); }
+
+    .viz-wrap { flex: 1; display: grid; place-items: center; width: 100%; position: relative; }
+    canvas#viz { width: 280px; height: 280px; }
+    .viz-glow {
+      position: absolute; width: 220px; height: 220px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(177,59,255,0.35), transparent 65%);
+      filter: blur(24px); pointer-events: none; transition: opacity .3s; opacity: .5;
+    }
+
+    .status { display: flex; align-items: center; gap: 9px; font-size: .9rem; color: var(--muted);
+              font-weight: 500; min-height: 22px; }
+    .status .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .status.live .pulse { background: #38d39f; box-shadow: 0 0 0 0 rgba(56,211,159,0.6);
+                          animation: pulse 1.6s infinite; }
+    .status.speaking .pulse { background: var(--accent2); box-shadow: 0 0 12px var(--accent2); }
+    .status.err .pulse { background: var(--danger); }
+    .mic-meter { display: flex; align-items: center; gap: 9px; margin-top: 12px;
+                 font-size: .64rem; letter-spacing: .16em; color: var(--muted); font-weight: 700; }
+    .mic-meter .bar { width: 130px; height: 5px; border-radius: 3px;
+                      background: rgba(255,255,255,0.08); overflow: hidden; }
+    .mic-meter .bar i { display: block; height: 100%; width: 0%;
+                        background: linear-gradient(90deg, #38d39f, #b13bff); transition: width .07s linear; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(56,211,159,.5);} 70%{box-shadow:0 0 0 9px rgba(56,211,159,0);} 100%{box-shadow:0 0 0 0 rgba(56,211,159,0);} }
+
+    /* chat view */
+    #chat { padding: 8px 8px 12px; }
+    .log { flex: 1; overflow-y: auto; padding: 8px 16px; display: flex; flex-direction: column; gap: 14px; }
+    .log::-webkit-scrollbar { width: 6px; }
+    .log::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+    .msg { max-width: 85%; padding: 11px 14px; border-radius: 16px; font-size: .92rem; line-height: 1.45; }
+    .msg .who { font-size: .64rem; letter-spacing: .14em; font-weight: 700; opacity: .6; margin-bottom: 3px; }
+    .msg.you { align-self: flex-end; background: linear-gradient(135deg, rgba(177,59,255,0.9), rgba(255,61,154,0.9)); color: #fff; border-bottom-right-radius: 5px; }
+    .msg.agent { align-self: flex-start; background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
+    .log .empty { margin: auto; color: var(--muted); font-size: .9rem; }
+
+    /* caption overlay on voice view */
+    .caption { position: absolute; left: 24px; right: 24px; bottom: 96px; text-align: center;
+               font-size: .98rem; color: #e6e9f2; text-shadow: 0 2px 12px rgba(0,0,0,.6);
+               transition: opacity .2s; }
+    .caption.hidden { opacity: 0; }
+
+    /* ---- controls ---- */
+    .controls { display: flex; align-items: center; justify-content: center; gap: 16px;
+                padding: 18px 24px 26px; }
+    .ctrl { width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--border);
+            background: rgba(255,255,255,0.06); color: #fff; cursor: pointer;
+            display: grid; place-items: center; transition: .18s; }
+    .ctrl:hover { background: rgba(255,255,255,0.12); transform: translateY(-1px); }
+    .ctrl svg { width: 20px; height: 20px; }
+    .ctrl.off { background: rgba(255,255,255,0.03); color: var(--muted); }
+    .ctrl.end { background: var(--danger); border-color: transparent; box-shadow: 0 8px 24px rgba(240,65,63,0.4); }
+    .ctrl.end:hover { background: #ff5654; }
+    .ctrl.mic { width: 60px; height: 60px; }
+    .ctrl.active-mic { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; box-shadow: 0 8px 28px rgba(177,59,255,0.45); }
+
+    /* ---- connect overlay ---- */
+    .overlay { position: absolute; inset: 0; background: rgba(7,8,12,0.82); backdrop-filter: blur(8px);
+               display: grid; place-items: center; z-index: 10; transition: opacity .3s; }
+    .overlay.hidden { opacity: 0; pointer-events: none; }
+    .overlay .inner { text-align: center; padding: 0 32px; }
+    .overlay h2 { font-size: 1.35rem; margin: 0 0 8px; font-weight: 700; }
+    .overlay p { color: var(--muted); margin: 0 0 28px; font-size: .92rem; line-height: 1.5; }
+    .connect-btn { border: 0; cursor: pointer; font: inherit; font-weight: 600; font-size: 1rem;
+                   padding: 15px 40px; border-radius: 999px; color: #fff;
+                   background: linear-gradient(135deg, var(--accent), var(--accent2));
+                   box-shadow: 0 10px 30px rgba(177,59,255,0.45); transition: .18s; }
+    .connect-btn:hover { transform: translateY(-2px); box-shadow: 0 14px 38px rgba(177,59,255,0.55); }
+    .connect-btn:disabled { opacity: .6; cursor: default; transform: none; }
+    .err-text { color: #ff8a88; font-size: .82rem; margin-top: 16px; min-height: 1em; }
+
+    /* ---- header right group + icon button ---- */
+    .head-right { display: flex; align-items: center; gap: 10px; }
+    .iconbtn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border);
+               background: rgba(255,255,255,0.05); color: var(--muted); cursor: pointer;
+               display: grid; place-items: center; transition: .18s; }
+    .iconbtn:hover, .iconbtn.active { color: #fff; background: rgba(255,255,255,0.12); }
+    .iconbtn svg { width: 16px; height: 16px; }
+
+    /* ---- logs console (slide-up drawer) ---- */
+    .logpanel { position: absolute; left: 0; right: 0; bottom: 0; top: 66px; z-index: 8;
+                background: rgba(8,9,13,0.97); backdrop-filter: blur(10px);
+                border-top: 1px solid var(--border); display: flex; flex-direction: column;
+                transform: translateY(101%); transition: transform .28s ease; }
+    .logpanel.open { transform: translateY(0); }
+    .lp-head { display: flex; align-items: center; justify-content: space-between;
+               padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .lp-head .lp-title { font-size: .72rem; letter-spacing: .16em; font-weight: 700; color: var(--muted); }
+    .lp-actions button { background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+                         color: var(--muted); font: inherit; font-size: .7rem; padding: 5px 10px;
+                         border-radius: 6px; cursor: pointer; margin-left: 6px; transition: .15s; }
+    .lp-actions button:hover { color: #fff; background: rgba(255,255,255,0.12); }
+    .console { flex: 1; overflow-y: auto; padding: 10px 14px;
+               font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+               font-size: .72rem; line-height: 1.65; }
+    .console::-webkit-scrollbar { width: 6px; }
+    .console::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+    .console .ln { display: flex; gap: 8px; white-space: pre-wrap; word-break: break-word; }
+    .console .ts { color: #565c6e; flex-shrink: 0; }
+    .console .lv { flex-shrink: 0; width: 44px; font-weight: 700; }
+    .console .tx { color: #cdd3e0; }
+    .console .i .lv { color: #5aa9ff; } .console .ok .lv { color: #3fb950; }
+    .console .ev .lv { color: #b98bff; } .console .er .lv { color: #ff6b68; }
+    .console .wa .lv { color: #e3b341; }
+    .console .empty { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- connect overlay -->
+    <div class="overlay" id="overlay">
+      <div class="inner">
+        <h2>Voice Agent</h2>
+        <p>Self-hosted on LiveKit, powered by Sarvam.<br>Click below and start talking.</p>
+        <button class="connect-btn" id="connectBtn">Start conversation</button>
+        <div class="err-text" id="errText"></div>
+      </div>
+    </div>
+
+    <header>
+      <div class="brand">
+        <div class="logo"></div>
+        <h1>AGENT</h1>
+      </div>
+      <div class="head-right">
+        <div class="tabs">
+          <button id="tabVoice" class="active" data-view="voice">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4"/></svg>
+            VOICE
+          </button>
+          <button id="tabChat" data-view="chat">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            CHAT
+          </button>
+        </div>
+        <button class="iconbtn" id="logsBtn" title="Show connection logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <!-- VOICE -->
+      <section class="view active" id="voice">
+        <div class="you-line">
+          <div class="label">YOU</div>
+          <div class="text placeholder" id="youText">Start talking to see a live transcript.</div>
+        </div>
+        <div class="viz-wrap">
+          <div class="viz-glow" id="vizGlow"></div>
+          <canvas id="viz" width="560" height="560"></canvas>
+        </div>
+        <div class="caption" id="caption"></div>
+        <div class="status" id="status"><span class="pulse"></span><span id="statusText">Idle</span></div>
+        <div class="mic-meter"><span>YOUR MIC</span><div class="bar"><i id="micLevel"></i></div></div>
+      </section>
+
+      <!-- CHAT -->
+      <section class="view" id="chat">
+        <div class="log" id="log"><div class="empty">Your conversation will appear here.</div></div>
+      </section>
+    </main>
+
+    <div class="controls">
+      <button class="ctrl off" id="captionBtn" title="Toggle captions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M7 13h3M14 13h3M7 10h.01M17 10h.01"/></svg>
+      </button>
+      <button class="ctrl mic active-mic" id="micBtn" title="Mute / unmute">
+        <svg id="micIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4"/></svg>
+      </button>
+      <button class="ctrl end" id="endBtn" title="End call">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.7 13.3a11 11 0 0 0 4 2.6l1.4-1.4a1.5 1.5 0 0 1 1.6-.3 9 9 0 0 0 2.6.5 1.5 1.5 0 0 1 1.4 1.5v2.3a1.5 1.5 0 0 1-1.6 1.5A18 18 0 0 1 3.7 5.6 1.5 1.5 0 0 1 5.2 4h2.3a1.5 1.5 0 0 1 1.5 1.4c.05.9.2 1.8.5 2.6a1.5 1.5 0 0 1-.3 1.6z" transform="rotate(135 12 12)"/></svg>
+      </button>
+    </div>
+
+    <!-- logs console -->
+    <div class="logpanel" id="logPanel">
+      <div class="lp-head">
+        <span class="lp-title">CONNECTION LOGS</span>
+        <div class="lp-actions">
+          <button id="logCopy">Copy</button>
+          <button id="logClear">Clear</button>
+          <button id="logClose">Close</button>
+        </div>
+      </div>
+      <div class="console" id="console"><div class="ln i"><span class="ts">—</span><span class="lv">INFO</span><span class="tx empty">Logs will appear here once you connect.</span></div></div>
+    </div>
+  </div>
+
+  <script>
+    const LK = window.LivekitClient;
+    const $ = (id) => document.getElementById(id);
+
+    let room = null, audioCtx = null, analyser = null, rafId = null;
+    let micCtx = null, micRaf = null;
+    let captionsOn = false, micOn = true;
+
+    /* ---------- tabs ---------- */
+    document.querySelectorAll('.tabs button').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        btn.classList.add('active');
+        $(btn.dataset.view).classList.add('active');
+      };
+    });
+
+    /* ---------- status ---------- */
+    function setStatus(text, cls = '') {
+      $('statusText').textContent = text;
+      $('status').className = 'status ' + cls;
+    }
+
+    /* ---------- logs console ---------- */
+    function logEvent(level, msg) {
+      const c = $('console');
+      const e = c.querySelector('.empty'); if (e) c.innerHTML = '';
+      const d = new Date();
+      const ts = d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+      const cls = { info: 'i', ok: 'ok', event: 'ev', error: 'er', warn: 'wa' }[level] || 'i';
+      const ln = document.createElement('div');
+      ln.className = 'ln ' + cls;
+      const t = document.createElement('span'); t.className = 'ts'; t.textContent = ts;
+      const l = document.createElement('span'); l.className = 'lv'; l.textContent = level.toUpperCase();
+      const x = document.createElement('span'); x.className = 'tx'; x.textContent = msg;
+      ln.append(t, l, x);
+      c.appendChild(ln);
+      while (c.children.length > 400) c.removeChild(c.firstChild);
+      c.scrollTop = c.scrollHeight;
+      if (level === 'error') openLogs(true);   // surface failures automatically
+    }
+    function openLogs(force) {
+      const open = force === true ? true : $('logPanel').classList.toggle('open');
+      if (force === true) $('logPanel').classList.add('open');
+      $('logsBtn').classList.toggle('active', $('logPanel').classList.contains('open'));
+    }
+    $('logsBtn').onclick = () => openLogs();
+    $('logClose').onclick = () => { $('logPanel').classList.remove('open'); $('logsBtn').classList.remove('active'); };
+    $('logClear').onclick = () => { $('console').innerHTML = ''; logEvent('info', 'logs cleared'); };
+    $('logCopy').onclick = async () => {
+      const txt = [...$('console').children]
+        .map(l => [...l.children].map(s => s.textContent).join('  ')).join('\n');
+      try { await navigator.clipboard.writeText(txt); logEvent('ok', 'copied logs to clipboard'); }
+      catch (_) { logEvent('warn', 'clipboard unavailable — select & copy manually'); }
+    };
+    window.addEventListener('error', (e) => logEvent('error', 'js: ' + e.message));
+    window.addEventListener('unhandledrejection', (e) => logEvent('error', 'promise: ' + (e.reason?.message || e.reason)));
+    logEvent('info', 'client ready · ' + (LK ? 'livekit-client loaded' : 'livekit-client MISSING'));
+
+    /* ---------- transcript ---------- */
+    // Live (in-progress) text goes to the voice view; finalized text becomes one
+    // chat bubble. LiveKit emits each utterance as multiple streams (interim + final)
+    // with different ids, so we dedupe finalized text per role within a short window.
+    const lastFinal = { you: { text: '', ts: 0 }, agent: { text: '', ts: 0 } };
+
+    function showLive(role, text) {
+      if (role === 'you') {
+        const t = $('youText'); t.textContent = text || '…'; t.classList.remove('placeholder');
+      } else {
+        $('caption').textContent = text;
+      }
+    }
+
+    function commitChat(role, text) {
+      const now = Date.now();
+      const lf = lastFinal[role];
+      if (text === lf.text && now - lf.ts < 2500) return false; // duplicate stream — skip
+      lf.text = text; lf.ts = now;
+      const log = $('log');
+      const emptyEl = log.querySelector('.empty'); if (emptyEl) emptyEl.remove();
+      const el = document.createElement('div');
+      el.className = 'msg ' + role;
+      el.innerHTML = `<div class="who">${role === 'you' ? 'YOU' : 'AGENT'}</div><div class="body"></div>`;
+      el.querySelector('.body').textContent = text;
+      log.appendChild(el);
+      log.scrollTop = log.scrollHeight;
+      return true;
+    }
+
+    function handleTranscript(role, text, final) {
+      text = (text || '').trim();
+      showLive(role, text);
+      if (final && text && commitChat(role, text)) logEvent('event', role + ': ' + text);
+    }
+
+    function wireTranscriptions() {
+      // LiveKit Agents 1.x forward transcripts as text streams on topic "lk.transcription".
+      // The client ALSO emits the legacy TranscriptionReceived event for the same data,
+      // so listening to both renders every line twice. We use text streams only.
+      if (typeof room.registerTextStreamHandler === 'function') {
+        room.registerTextStreamHandler('lk.transcription', async (reader, info) => {
+          const role = info.identity === room.localParticipant.identity ? 'you' : 'agent';
+          let text = '';
+          for await (const chunk of reader) { text += chunk; handleTranscript(role, text, false); }
+          handleTranscript(role, text, true);
+        });
+      } else {
+        // Older clients without text streams: fall back to the segment event.
+        room.on(LK.RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const role = participant && participant.identity === room.localParticipant.identity ? 'you' : 'agent';
+          segments.forEach(s => handleTranscript(role, s.text, s.final));
+        });
+      }
+    }
+
+    /* ---------- audio visualizer ---------- */
+    function startViz(track) {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.84;
+      src.connect(analyser);
+      const bins = analyser.frequencyBinCount;       // 256
+      const freq = new Uint8Array(bins);
+
+      const canvas = $('viz'), ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height, cx = W / 2, cy = H / 2;
+
+      const N = 80;                                  // points around the orb
+      const radii = new Array(N).fill(110);          // eased radii (smooth motion)
+      // orbiting particle field (seeded once, deterministic)
+      const particles = Array.from({ length: 48 }, (_, i) => ({
+        a: (i / 48) * Math.PI * 2,
+        spd: 0.0007 + (i % 7) * 0.0004,
+        off: 10 + (i * 37 % 70),
+        sz: 1 + (i % 3) * 0.8,
+        ph: i * 0.7,
+      }));
+      let rot = 0, breathe = 0, sLevel = 0;          // smoothed level
+
+      // closed smooth curve through points via quadratics between midpoints
+      function blobPath(pts) {
+        const n = pts.length;
+        ctx.beginPath();
+        ctx.moveTo((pts[n - 1].x + pts[0].x) / 2, (pts[n - 1].y + pts[0].y) / 2);
+        for (let i = 0; i < n; i++) {
+          const c = pts[i], nx = pts[(i + 1) % n];
+          ctx.quadraticCurveTo(c.x, c.y, (c.x + nx.x) / 2, (c.y + nx.y) / 2);
+        }
+        ctx.closePath();
+      }
+
+      function draw() {
+        rafId = requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(freq);
+        let sum = 0; for (let i = 0; i < bins; i++) sum += freq[i];
+        const level = sum / bins / 255;
+        sLevel += (level - sLevel) * 0.1;            // ease overall energy
+        breathe += 0.018;
+        rot += 0.0015 + sLevel * 0.012;
+
+        ctx.clearRect(0, 0, W, H);
+        $('vizGlow').style.opacity = (0.28 + sLevel * 1.1).toFixed(3);
+        $('vizGlow').style.transform = `scale(${(1 + sLevel * 0.55).toFixed(3)})`;
+
+        if (level > 0.035) setStatus('Agent is speaking…', 'speaking');
+        else if (room && room.state === 'connected') setStatus('Listening…', 'live');
+
+        // target radius per point: symmetric spectrum + idle breathing
+        const base = 102 + Math.sin(breathe) * 5 + sLevel * 44;
+        const half = N / 2, usable = Math.floor(bins * 0.6);
+        for (let i = 0; i < N; i++) {
+          const m = i < half ? i : N - i;            // mirror → seamless & balanced
+          const amp = freq[Math.floor((m / half) * usable)] / 255;
+          const target = base + amp * amp * 120
+            + Math.sin(i * 0.6 + breathe * 1.3) * 4
+            + Math.sin(i * 1.7 - breathe) * 2.4;
+          radii[i] += (target - radii[i]) * 0.16;    // temporal easing
+        }
+        const pts = radii.map((r, i) => {
+          const a = rot + (i / N) * Math.PI * 2;
+          return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+        });
+
+        const g = ctx.createLinearGradient(cx - 130, cy - 130, cx + 130, cy + 130);
+        g.addColorStop(0, '#7d2bff'); g.addColorStop(0.5, '#b13bff'); g.addColorStop(1, '#ff3d9a');
+
+        // 1) soft outer bloom
+        ctx.save(); blobPath(pts);
+        ctx.globalAlpha = 0.16 + sLevel * 0.18;
+        ctx.shadowBlur = 55 + sLevel * 80; ctx.shadowColor = '#c14bff';
+        ctx.fillStyle = g; ctx.fill(); ctx.restore();
+
+        // 2) depth layer (inset, fainter)
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(0.86, 0.86); ctx.translate(-cx, -cy);
+        blobPath(pts); ctx.globalAlpha = 0.22; ctx.fillStyle = g; ctx.fill(); ctx.restore();
+
+        // 3) crisp rim
+        ctx.save(); blobPath(pts);
+        ctx.globalAlpha = 0.95; ctx.lineWidth = 2; ctx.strokeStyle = g;
+        ctx.shadowBlur = 18 + sLevel * 40; ctx.shadowColor = '#ff5cc4';
+        ctx.stroke(); ctx.restore();
+
+        // 4) breathing core
+        const cr = base * 0.78 + sLevel * 48;
+        const core = ctx.createRadialGradient(cx, cy, 4, cx, cy, cr);
+        core.addColorStop(0, 'rgba(255,150,220,' + (0.5 + sLevel * 0.4) + ')');
+        core.addColorStop(0.45, 'rgba(177,59,255,' + (0.2 + sLevel * 0.25) + ')');
+        core.addColorStop(1, 'rgba(125,43,255,0)');
+        ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+        ctx.fillStyle = core; ctx.fill(); ctx.restore();
+
+        // 5) orbiting particles
+        ctx.save(); ctx.shadowBlur = 8; ctx.shadowColor = '#ff7ad9';
+        particles.forEach(p => {
+          p.a += p.spd + sLevel * 0.003;
+          const idx = Math.floor((p.a / (Math.PI * 2) % 1 + 1) % 1 * N);
+          const rr = radii[idx] + p.off + Math.sin(breathe * 2 + p.ph) * 4 + sLevel * 26;
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(p.a) * rr, cy + Math.sin(p.a) * rr, p.sz + sLevel * 1.4, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,190,240,' + (0.2 + sLevel * 0.6) + ')';
+          ctx.fill();
+        });
+        ctx.restore();
+      }
+      draw();
+    }
+
+    /* ---------- connect / disconnect ---------- */
+    async function connect() {
+      const btn = $('connectBtn'); btn.disabled = true; btn.textContent = 'Connecting…';
+      $('errText').textContent = '';
+      try {
+        // Unique room + identity per connect — never reuse a stale room (stale
+        // rooms caused dtls timeouts and blocked agent dispatch).
+        const rid = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        const roomName = 'voice-' + rid;
+        logEvent('info', 'fetching token for room ' + roomName + ' …');
+        const { token, url } = await (await fetch('/token?room=' + roomName + '&identity=user-' + rid)).json();
+        logEvent('ok', 'token received · livekit url: ' + url);
+        room = new LK.Room({ adaptiveStream: true, dynacast: true });
+        wireTranscriptions();
+
+        room.on(LK.RoomEvent.ConnectionStateChanged, (s) => logEvent('event', 'connection state: ' + s));
+        room.on(LK.RoomEvent.SignalConnected, () => logEvent('ok', 'signal connected'));
+        room.on(LK.RoomEvent.Reconnecting, () => logEvent('warn', 'reconnecting…'));
+        room.on(LK.RoomEvent.Reconnected, () => logEvent('ok', 'reconnected'));
+        room.on(LK.RoomEvent.ParticipantConnected, (p) => logEvent('event', 'participant joined: ' + p.identity));
+        room.on(LK.RoomEvent.ParticipantDisconnected, (p) => logEvent('event', 'participant left: ' + p.identity));
+        room.on(LK.RoomEvent.MediaDevicesError, (e) => logEvent('error', 'media device: ' + e.message));
+        room.on(LK.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+          logEvent('event', 'track subscribed: ' + track.kind + ' from ' + (participant?.identity || '?'));
+          if (track.kind === 'audio') { track.attach(); startViz(track); logEvent('ok', 'agent audio attached · visualizer live'); }
+        });
+        room.on(LK.RoomEvent.Disconnected, (reason) => { logEvent('warn', 'disconnected' + (reason !== undefined ? ' (reason ' + reason + ')' : '')); teardown(); });
+
+        await room.connect(url, token);
+        logEvent('ok', 'connected to room: ' + room.name);
+        await room.localParticipant.setMicrophoneEnabled(true);
+        logEvent('ok', 'microphone enabled · publishing audio');
+        startMicMeter();
+        $('overlay').classList.add('hidden');
+        setStatus('Listening…', 'live');
+      } catch (e) {
+        const m = e.message || String(e);
+        $('errText').textContent = m;
+        logEvent('error', 'connect failed: ' + m);
+        btn.disabled = false; btn.textContent = 'Start conversation';
+      }
+    }
+
+    // Meter the LOCAL mic so the user can verify their own audio is captured.
+    function startMicMeter() {
+      try {
+        const pub = room.localParticipant.getTrackPublication(LK.Track.Source.Microphone);
+        const track = pub && pub.track;
+        if (!track) { logEvent('warn', 'no local mic track found to meter'); return; }
+        micCtx = micCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const src = micCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+        const an = micCtx.createAnalyser(); an.fftSize = 256; src.connect(an);
+        const data = new Uint8Array(an.frequencyBinCount);
+        let sawSound = false, warned = false, start = Date.now();
+        logEvent('info', 'mic meter started — speak to test your microphone');
+        function tick() {
+          micRaf = requestAnimationFrame(tick);
+          an.getByteFrequencyData(data);
+          let s = 0; for (let i = 0; i < data.length; i++) s += data[i];
+          const lvl = s / data.length / 255;
+          $('micLevel').style.width = Math.min(100, lvl * 260).toFixed(0) + '%';
+          if (lvl > 0.02 && !sawSound) {
+            sawSound = true;
+            logEvent('ok', 'mic input detected (' + Math.round(lvl * 100) + '%) — your audio IS being captured');
+          }
+          if (!sawSound && !warned && Date.now() - start > 6000) {
+            warned = true;
+            logEvent('error', 'NO mic input after 6s — your published track is silent. Check OS mic, browser input device, or hardware mute.');
+          }
+        }
+        tick();
+      } catch (e) { logEvent('warn', 'mic meter failed: ' + e.message); }
+    }
+
+    function teardown() {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (micRaf) cancelAnimationFrame(micRaf);
+      if (audioCtx) { audioCtx.close(); audioCtx = null; }
+      if (micCtx) { micCtx.close(); micCtx = null; }
+      $('micLevel').style.width = '0%';
+      setStatus('Call ended');
+      logEvent('info', 'call ended');
+      $('overlay').classList.remove('hidden');
+      $('connectBtn').disabled = false; $('connectBtn').textContent = 'Start conversation';
+    }
+
+    /* ---------- controls ---------- */
+    $('connectBtn').onclick = connect;
+    $('endBtn').onclick = () => { logEvent('info', 'ending call'); room && room.disconnect(); };
+    $('micBtn').onclick = async () => {
+      if (!room) return;
+      micOn = !micOn;
+      await room.localParticipant.setMicrophoneEnabled(micOn);
+      $('micBtn').classList.toggle('active-mic', micOn);
+      $('micBtn').classList.toggle('off', !micOn);
+      logEvent('info', 'microphone ' + (micOn ? 'unmuted' : 'muted'));
+    };
+    $('captionBtn').onclick = () => {
+      captionsOn = !captionsOn;
+      $('caption').classList.toggle('hidden', !captionsOn);
+      $('captionBtn').classList.toggle('off', !captionsOn);
+    };
+    $('caption').classList.add('hidden'); // off by default
+  </script>
+</body>
+</html>
