@@ -1,0 +1,14 @@
+# LiveKit config for a real Linux server deployment.
+# Differs from the local (Windows) livekit.yaml: NO node_ip and NO keys here —
+#   - node_ip is passed via `--node-ip $SERVER_IP` (docker-compose.server.yml)
+#   - API keys come from the LIVEKIT_KEYS env var (from your .env)
+# so this file holds no machine-specific values or secrets.
+
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882        # single-port UDP mux; published 1:1 to the host
+  use_external_ip: false
+
+logging:
+  level: info
